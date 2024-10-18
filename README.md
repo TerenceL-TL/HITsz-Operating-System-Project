@@ -1,3 +1,16 @@
-# XV6-OSLAB24-HITSZ
+# HITsz-OS-Lab
 
-2024年 HITSZ的xv6 OS实验
+Based on xv6 from MIT, and conducted in Fall 2024.
+
+## How to use
+
+Please Checkout branches for each lab using
+
+```
+git checkout <branch-to-checkout>
+```
+
+Here are the branches corresponding to the labs: 
+
+- Lab1: util
+- Lab2: syscall
