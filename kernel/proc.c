@@ -271,6 +271,9 @@ int fork(void) {
 // Caller must hold p->lock.
 void reparent(struct proc *p) {
   struct proc *pp;
+  int child_num = 0;
+  static char *states[] = {
+      [UNUSED] "unused", [SLEEPING] "sleep ", [RUNNABLE] "runble", [RUNNING] "run   ", [ZOMBIE] "zombie"};
 
   for (pp = proc; pp < &proc[NPROC]; pp++) {
     // this code uses pp->parent without holding pp->lock.
@@ -280,6 +283,8 @@ void reparent(struct proc *p) {
     if (pp->parent == p) {
       // pp->parent can't change between the check and the acquire()
       // because only the parent changes it, and we're the parent.
+      exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n", p->pid, child_num, pp->pid, pp->name, states[pp->state]);
+      child_num++;
       acquire(&pp->lock);
       pp->parent = initproc;
       // we should wake up init here, but that would require
@@ -295,6 +300,10 @@ void reparent(struct proc *p) {
 // An exited process remains in the zombie state
 // until its parent calls wait().
 void exit(int status) {
+
+  static char *states[] = {
+      [UNUSED] "unused", [SLEEPING] "sleep ", [RUNNABLE] "runble", [RUNNING] "run   ", [ZOMBIE] "zombie"};
+
   struct proc *p = myproc();
 
   if (p == initproc) panic("init exiting");
@@ -338,6 +347,10 @@ void exit(int status) {
 
   acquire(&p->lock);
 
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n", p->pid, 
+                                                              original_parent->pid, 
+                                                              original_parent->name, 
+                                                              states[original_parent->state]);
   // Give any children to init.
   reparent(p);
 
@@ -355,8 +368,9 @@ void exit(int status) {
 }
 
 // Wait for a child process to exit and return its pid.
+// flags = 1 if wait is not blocked, else 0.
 // Return -1 if this process has no children.
-int wait(uint64 addr) {
+int wait(uint64 addr, int flags) {
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
@@ -395,7 +409,7 @@ int wait(uint64 addr) {
     }
 
     // No point waiting if we don't have any children.
-    if (!havekids || p->killed) {
+    if (!havekids || p->killed || flags == 1) {
       release(&p->lock);
       return -1;
     }
