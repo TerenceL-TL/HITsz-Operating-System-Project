@@ -93,10 +93,12 @@ uint64 sys_yield()
   release(&p->lock);
   
   struct proc* pr;
+  int found = 0;
+  pr = p;
+
   for(;;)
   {
-    int found = 0;
-    for (pr = proc; pr < &proc[NPROC]; pr++) {
+    for (; pr < &proc[NPROC]; pr++) {
       acquire(&pr->lock);
       if (pr->state == RUNNABLE)
       {
@@ -108,6 +110,7 @@ uint64 sys_yield()
       }
       release(&pr->lock);
     }
+    pr = proc;
     if (found == 1)
     {
       break;
