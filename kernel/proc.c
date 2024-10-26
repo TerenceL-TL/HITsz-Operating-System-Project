@@ -283,9 +283,9 @@ void reparent(struct proc *p) {
     if (pp->parent == p) {
       // pp->parent can't change between the check and the acquire()
       // because only the parent changes it, and we're the parent.
+      acquire(&pp->lock);
       exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n", p->pid, child_num, pp->pid, pp->name, states[pp->state]);
       child_num++;
-      acquire(&pp->lock);
       pp->parent = initproc;
       // we should wake up init here, but that would require
       // initproc->lock, which would be a deadlock, since we hold
