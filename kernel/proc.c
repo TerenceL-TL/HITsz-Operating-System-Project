@@ -37,6 +37,7 @@ void procinit(void) {
     uint64 va = KSTACK((int)(p - proc));
     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
     p->kstack = va;
+    p->kstack_pa = (uint64)pa;
   }
   kvminithart();
 }
@@ -111,6 +112,16 @@ found:
     return 0;
   }
 
+  // for kernel page table
+  p->k_pagetable = u_kvminit();
+  if(p->k_pagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  u_kvmmap(p->k_pagetable, p->kstack, p->kstack_pa, PGSIZE, PTE_R | PTE_W);
+
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -127,7 +138,16 @@ static void freeproc(struct proc *p) {
   if (p->trapframe) kfree((void *)p->trapframe);
   p->trapframe = 0;
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
+  if(p->kstack) {
+    pte_t* pte = walk(p->k_pagetable, p->kstack, 0);
+    if(pte == 0) panic("freeproc: walk");
+  }
+  if(p->pagetable)
+  {
+    proc_free_kpagetable(p->k_pagetable);
+  }
   p->pagetable = 0;
+  p->k_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -174,6 +194,16 @@ void proc_freepagetable(pagetable_t pagetable, uint64 sz) {
   uvmfree(pagetable, sz);
 }
 
+// Free a process's kernel page table, and free the
+// physical memory it refers to.
+void
+proc_free_kpagetable(pagetable_t k_pagetable)
+{
+  // printf("free k pgtbl: %p\n", k_pagetable);
+  uvmunmap(k_pagetable, TRAMPOLINE, 1, 0);
+  u_k_freewalk(k_pagetable);
+}
+
 // a user program that calls exec("/init")
 // od -t xC initcode
 uchar initcode[] = {0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02, 0x97, 0x05, 0x00, 0x00, 0x93,
@@ -192,6 +222,7 @@ void userinit(void) {
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  sync_pagetable(p->pagetable, p->k_pagetable, 0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -213,9 +244,11 @@ int growproc(int n) {
 
   sz = p->sz;
   if (n > 0) {
+    if(PGROUNDUP(sz+n >= PLIC)) return -1;
     if ((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    sync_pagetable(p->pagetable, p->k_pagetable, sz - n, sz);
   } else if (n < 0) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -255,6 +288,8 @@ int fork(void) {
   for (i = 0; i < NOFILE; i++)
     if (p->ofile[i]) np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+  
+  sync_pagetable(np->pagetable, np->k_pagetable, 0, np->sz);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
@@ -430,7 +465,10 @@ void scheduler(void) {
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        w_satp(MAKE_SATP(p->k_pagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
