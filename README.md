@@ -18,3 +18,5 @@ Here are the branches corresponding to the labs:
 - Lab4: pgtbl
 
 对于lab5，由于不是xv6，所以移步https://github.com/TerenceL-TL/HITsz-OS-FS.git
+
+对于每个实验，使用```make qemu```构建，使用```make grade```评分
